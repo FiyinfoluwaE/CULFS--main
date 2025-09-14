@@ -145,10 +145,13 @@ export const StudentDashboard = ({ user, onLogout }: StudentDashboardProps) => {
       setReportedItems((prev) => prev.filter((i) => i.caseNumber !== caseNumber));
       queryClient.invalidateQueries({ queryKey: ["reportedItems", user.id] });
     },
-    onError() {
+    onError(error) {
+      // Surface server-provided message when available to help debugging
+      const msg = error?.message || "Could not delete report";
+      console.debug("Delete failed:", msg);
       toast({
         title: "Error",
-        description: "Could not delete report",
+        description: msg,
         variant: "destructive",
       });
     },
@@ -156,7 +159,8 @@ export const StudentDashboard = ({ user, onLogout }: StudentDashboardProps) => {
 
   const handleDeleteLostItem = (item: LostItem) => {
     if (!window.confirm("Are you sure you want to delete this report?")) return;
-    deleteMutation.mutate(item.caseNumber);
+  console.debug("Attempting to delete lost item with case number:", item.caseNumber);
+  deleteMutation.mutate(item.caseNumber);
   };
 
   const { data: notificationsData, refetch: refetchNotifications } = useQuery<
