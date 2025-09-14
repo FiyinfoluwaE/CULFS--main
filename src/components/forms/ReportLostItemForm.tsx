@@ -54,7 +54,7 @@ export const ReportLostItemForm = ({
     lastSeenLocation: "",
     image: null as File | null,
   });
-  const [loading, setLoading] = useState(false);
+  // local loading was removed in favor of using mutation status
   const { toast } = useToast();
 
   const itemTypes = [
@@ -100,7 +100,6 @@ export const ReportLostItemForm = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
 
     const caseNumber = generateCaseNumber();
 
@@ -118,7 +117,7 @@ export const ReportLostItemForm = ({
       lastSeenLocation: formData.lastSeenLocation,
     };
 
-    reportMutation.mutate(newItem);
+  reportMutation.mutate(newItem);
   };
 
   const queryClient = useQueryClient();
@@ -134,9 +133,13 @@ export const ReportLostItemForm = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(item),
       });
-      return res.json();
+      const json = await res.json();
+      if (!res.ok || (json && json.success === false)) {
+        throw new Error(json?.message || "Report failed");
+      }
+      return json;
     },
-    onSuccess(data, item) {
+  onSuccess(data, item) {
       // Reset form
       setFormData({
         itemName: "",
@@ -154,9 +157,8 @@ export const ReportLostItemForm = ({
         description: `Your case number is ${item.caseNumber}. A confirmation email has been sent.`,
       });
 
-      onItemReported(item);
-      queryClient.invalidateQueries({ queryKey: ["reportedItems", userId] });
-      setLoading(false);
+  onItemReported(item);
+  queryClient.invalidateQueries({ queryKey: ["reportedItems", userId] });
     },
     onError() {
       toast({
@@ -164,8 +166,8 @@ export const ReportLostItemForm = ({
         description: "Please try again later.",
         variant: "destructive",
       });
-      setLoading(false);
     },
+  // no local loading to reset here; UI uses mutation.status
   });
 
   return (
@@ -336,9 +338,9 @@ export const ReportLostItemForm = ({
           <Button
             type="submit"
             className="w-full bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800"
-            disabled={loading}
+            disabled={reportMutation.status === "pending"}
           >
-            {loading ? "Reporting Item..." : "Report Lost Item"}
+              {reportMutation.status === "pending" ? "Reporting Item..." : "Report Lost Item"}
           </Button>
         </form>
       </CardContent>
