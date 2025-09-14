@@ -21,7 +21,7 @@ if os.environ.get("RAILWAY_ENVIRONMENT"):
     # Running on Railway → use env vars
     app.config["SQLALCHEMY_DATABASE_URI"] = (
         f"mysql+pymysql://{os.environ['MYSQLUSER']}:{os.environ['MYSQLPASSWORD']}"
-        f"@{os.environ['MYSQLHOST']}:{os.environ['MYSQLPORT']}/{os.environ['MYSQLDATABASE']}"
+        f"@{os.environ['MYSQLHOST']}:{os.environ['MYSQLPORT']}/{os.environ['MYSQL_DATABASE']}"
     )
 else:
     # Local dev → fallback
