@@ -144,9 +144,14 @@ export const StudentDashboard = ({ user, onLogout }: StudentDashboardProps) => {
       }
       const serverMessage =
         typeof json === "object" && json !== null && "message" in json
-    ? (json as DeleteResponse).message
+          ? (json as DeleteResponse).message
           : null;
-      if (!res.ok || (json && typeof json === "object" && (json as DeleteResponse).success === false)) {
+      if (
+        !res.ok ||
+        (json &&
+          typeof json === "object" &&
+          (json as DeleteResponse).success === false)
+      ) {
         const serverMsg = serverMessage || res.statusText || "Delete failed";
         throw new Error(`HTTP ${res.status}: ${serverMsg}`);
       }
@@ -154,9 +159,15 @@ export const StudentDashboard = ({ user, onLogout }: StudentDashboardProps) => {
       return (json as DeleteResponse) || { success: true };
     },
     onSuccess(_, caseNumber) {
-      toast({ title: "Deleted", description: "Report deleted", variant: "default" });
+      toast({
+        title: "Deleted",
+        description: "Report deleted",
+        variant: "default",
+      });
       // Optimistically remove from local list so UI updates immediately
-      setReportedItems((prev) => prev.filter((i) => i.caseNumber !== caseNumber));
+      setReportedItems((prev) =>
+        prev.filter((i) => i.caseNumber !== caseNumber)
+      );
       queryClient.invalidateQueries({ queryKey: ["reportedItems", user.id] });
     },
     onError(error) {
@@ -173,8 +184,11 @@ export const StudentDashboard = ({ user, onLogout }: StudentDashboardProps) => {
 
   const handleDeleteLostItem = (item: LostItem) => {
     if (!window.confirm("Are you sure you want to delete this report?")) return;
-  console.debug("Attempting to delete lost item with case number:", item.caseNumber);
-  deleteMutation.mutate(item.caseNumber);
+    console.debug(
+      "Attempting to delete lost item with case number:",
+      item.caseNumber
+    );
+    deleteMutation.mutate(item.caseNumber);
   };
 
   const { data: notificationsData, refetch: refetchNotifications } = useQuery<

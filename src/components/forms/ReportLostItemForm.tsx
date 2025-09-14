@@ -100,7 +100,6 @@ export const ReportLostItemForm = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     const caseNumber = generateCaseNumber();
 
     const newItem: LostItem = {
@@ -117,29 +116,38 @@ export const ReportLostItemForm = ({
       lastSeenLocation: formData.lastSeenLocation,
     };
 
-  reportMutation.mutate(newItem);
+    reportMutation.mutate(newItem);
   };
 
   const queryClient = useQueryClient();
-
-  const reportMutation = useMutation<
-    { success: boolean; item?: LostItem },
-    Error,
-    LostItem
-  >({
+  type ReportResponse = {
+    success: boolean;
+    case_number?: string;
+    item?: LostItem;
+    message?: string;
+  };
+  const reportMutation = useMutation<ReportResponse, Error, LostItem>({
     mutationFn: async (item) => {
+      console.log("Reporting lost item, request body:", item);
       const res = await apiFetch("/api/report-lost-item", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(item),
       });
       const json = await res.json();
+      console.log("Report response status:", res.status, "body:", json);
       if (!res.ok || (json && json.success === false)) {
         throw new Error(json?.message || "Report failed");
       }
       return json;
     },
-  onSuccess(data, item) {
+    onSuccess(data, item) {
+      console.log(
+        "Report onSuccess called; server data:",
+        data,
+        "original item:",
+        item
+      );
       // Reset form
       setFormData({
         itemName: "",
@@ -154,17 +162,25 @@ export const ReportLostItemForm = ({
 
       toast({
         title: "Item Reported Successfully",
-        description: `Your case number is ${data.case_number || item.caseNumber}. A confirmation email has been sent.`,
+        description: `Your case number is ${
+          data.case_number || item.caseNumber
+        }. A confirmation email has been sent.`,
       });
 
       // Use server's canonical case number when available so future actions (delete) target the correct record
-      const serverCase = (data && (data as any).case_number) || item.caseNumber;
+      const serverCase = (data && data.case_number) || item.caseNumber;
       const serverItem: LostItem = {
         ...item,
         caseNumber: serverCase,
       };
+      console.log("Calling onItemReported with serverItem:", serverItem);
       onItemReported(serverItem);
-  queryClient.invalidateQueries({ queryKey: ["reportedItems", userId] });
+      queryClient.invalidateQueries({ queryKey: ["reportedItems", userId] });
+    },
+    onSettled(data, error, variables, context) {
+      console.log("Report mutation settled. data:", data, "error:", error);
+      // Ensure reported items list is refreshed so UI reflects server state
+      queryClient.invalidateQueries({ queryKey: ["reportedItems", userId] });
     },
     onError() {
       toast({
@@ -173,7 +189,7 @@ export const ReportLostItemForm = ({
         variant: "destructive",
       });
     },
-  // no local loading to reset here; UI uses mutation.status
+    // no local loading to reset here; UI uses mutation.status
   });
 
   return (
@@ -346,7 +362,9 @@ export const ReportLostItemForm = ({
             className="w-full bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800"
             disabled={reportMutation.status === "pending"}
           >
-              {reportMutation.status === "pending" ? "Reporting Item..." : "Report Lost Item"}
+            {reportMutation.status === "pending"
+              ? "Reporting Item..."
+              : "Report Lost Item"}
           </Button>
         </form>
       </CardContent>
