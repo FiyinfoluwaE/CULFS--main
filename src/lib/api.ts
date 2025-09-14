@@ -13,12 +13,15 @@ const rawBase: string =
 // VITE_API_URL to include a trailing '/api' strip that too so callers that pass
 // '/api/...' won't produce '/api/api/...'.
 let normalized = rawBase.trim().replace(/\/+$/g, "");
-if (normalized.toLowerCase().endsWith('/api')) {
+if (normalized.toLowerCase().endsWith("/api")) {
   normalized = normalized.slice(0, -4);
 }
 export const apiBase: string = normalized;
 
-export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+export async function apiFetch(
+  path: string,
+  init?: RequestInit
+): Promise<Response> {
   // If a full URL is provided, use it unchanged.
   if (path.startsWith("http")) return fetch(path, init);
 
