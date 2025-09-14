@@ -86,15 +86,15 @@ export const LogFoundItemForm = ({
     setFormData({ ...formData, images: files });
   };
 
-  const mutation = useMutation<any, any, FoundItem, unknown>(
-    (payload: FoundItem) =>
+  const mutation = useMutation({
+    mutationFn: (payload: FoundItem) =>
       apiFetch("/api/log-found-item", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       }).then((r) => r.json()),
-    {
-      onSuccess: (data, variables) => {
+
+    onSuccess: (data, variables) => {
         // Reset form
         setFormData({
           itemName: "",
@@ -117,7 +117,7 @@ export const LogFoundItemForm = ({
         onFoundItemLogged(variables);
         setLoading(false);
       },
-      onError: () => {
+    onError: () => {
         toast({
           title: "Logging Failed",
           description: "Please try again later.",
