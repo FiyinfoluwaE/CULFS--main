@@ -222,6 +222,10 @@ def check_for_matches(found_item):
 
 # API Routes
 
+@app.route("/")
+def home():
+    return {"message": "Flask backend is running 🚀"}
+
 @app.route('/api/register', methods=['POST'])
 def register():
     data = request.get_json()
