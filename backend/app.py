@@ -288,30 +288,21 @@ def register():
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
-    
-    # Admin login
-    if (data.get('email') == 'admin' or data.get('email') == 'admin@covenantuniversity.edu.ng') and data.get('password') == 'admin':
-        return jsonify({
-            'success': True,
-            'user': {
-                'id': 'admin-001',
-                'name': 'System Administrator',
-                'email': 'admin@covenantuniversity.edu.ng',
-                'role': 'admin'
-            }
-        }), 200
-    
-    # Regular user login
+    # Basic validation
+    if not data or 'email' not in data or 'password' not in data:
+        return jsonify({'success': False, 'message': 'Email and password required'}), 400
+
+    # Regular user/admin login (DB-backed)
     user = User.query.filter_by(email_address=data['email']).first()
-    
-    if user and check_password_hash(user.password_hash, data['password']):  # In production, use proper password hashing!
+
+    if user and check_password_hash(user.password_hash, data['password']):
         user_data = {
             'id': user.user_id,
             'name': user.name,
             'email': user.email_address,
             'role': user.role
         }
-        
+
         # Add role-specific data
         if user.role == 'student':
             student = Student.query.filter_by(user_id=user.user_id).first()
@@ -321,10 +312,57 @@ def login():
             staff = Staff.query.filter_by(user_id=user.user_id).first()
             if staff:
                 user_data['staffId'] = staff.staff_id
-        
-        return jsonify({'success': True, 'user': user_data}),200
-    
+
+        return jsonify({'success': True, 'user': user_data}), 200
+
     return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
+
+
+@app.route('/api/create-admin', methods=['POST'])
+def create_admin():
+    """Create an admin user.
+
+    Security: This endpoint requires either the environment variable ADMIN_SETUP_KEY to be set
+    and the same value sent in the JSON payload as 'setupKey', OR it only allows creating the
+    first admin when no admin user exists and ADMIN_SETUP_KEY is not set (bootstrap).
+    """
+    data = request.get_json() or {}
+
+    # Protect creation with a setup key if provided in environment
+    setup_key_env = os.environ.get('ADMIN_SETUP_KEY')
+    if setup_key_env:
+        if data.get('setupKey') != setup_key_env:
+            return jsonify({'success': False, 'message': 'Invalid setup key'}), 403
+    else:
+        # If no ADMIN_SETUP_KEY configured, only allow creation when there is no admin yet
+        existing_admin = User.query.filter_by(role='admin').first()
+        if existing_admin:
+            return jsonify({'success': False, 'message': 'Admin already exists; set ADMIN_SETUP_KEY to create additional admins'}), 403
+
+    # Required fields
+    for field in ('name', 'email', 'password'):
+        if not data.get(field):
+            return jsonify({'success': False, 'message': f'Missing field: {field}'}), 400
+
+    # Prevent duplicate email
+    if User.query.filter_by(email_address=data['email']).first():
+        return jsonify({'success': False, 'message': 'A user with that email already exists'}), 400
+
+    try:
+        hashed = generate_password_hash(data['password'])
+        admin = User(
+            name=data['name'],
+            role='admin',
+            university_credentials=data.get('credentials'),
+            email_address=data['email'],
+            password_hash=hashed
+        )
+        db.session.add(admin)
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Admin user created', 'user_id': admin.user_id}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/report-lost-item', methods=['POST'])
 def report_lost_item():

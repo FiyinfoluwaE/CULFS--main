@@ -18,6 +18,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { ReportLostItemForm } from "@/components/forms/ReportLostItemForm";
 import { Bell } from "lucide-react";
+import apiFetch from "@/lib/api";
 
 interface User {
   id: string;
@@ -125,13 +126,10 @@ export const StaffDashboard = ({ user, onLogout }: StaffDashboardProps) => {
   };
 
   const fetchLostItems = async () => {
-    const response = await fetch(
-      `http://localhost:5000/api/lost-items/${user.id}`,
-      {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    const response = await apiFetch(`/api/lost-items/${user.id}`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
 
     const items = await response.json();
     console.log(items);
@@ -146,9 +144,7 @@ export const StaffDashboard = ({ user, onLogout }: StaffDashboardProps) => {
   const handleShowNotifications = async () => {
     setShowNotifications(true);
     setLoadingNotifications(true);
-    const res = await fetch(
-      `http://localhost:5000/api/notifications/${user.id}`
-    );
+    const res = await apiFetch(`/api/notifications/${user.id}`);
     const data = await res.json();
     setNotifications(data.notifications || []);
     setLoadingNotifications(false);
@@ -162,17 +158,15 @@ export const StaffDashboard = ({ user, onLogout }: StaffDashboardProps) => {
       setDepartmentError(null);
       try {
         // Fetch staff record to get officeId
-        const staffRes = await fetch(
-          `http://localhost:5000/api/staff/${encodeURIComponent(user.staffId!)}`
+        const staffRes = await apiFetch(
+          `/api/staff/${encodeURIComponent(user.staffId!)}`
         );
         const staffData = await staffRes.json();
         if (!staffData.success) throw new Error("Could not fetch staff office");
         const officeId = staffData.staff.officeId;
 
         // Fetch department lost/found updates
-        const res = await fetch(
-          `http://localhost:5000/api/department-lost-found/${officeId}`
-        );
+        const res = await apiFetch(`/api/department-lost-found/${officeId}`);
         const data = await res.json();
         if (!data.success)
           throw new Error(data.message || "Failed to fetch updates");

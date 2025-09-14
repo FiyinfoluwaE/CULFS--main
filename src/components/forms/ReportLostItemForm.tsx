@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Upload } from "lucide-react";
+import apiFetch from "@/lib/api";
 
 interface LostItem {
   userId: string;
@@ -116,14 +117,11 @@ export const ReportLostItemForm = ({
         lastSeenLocation: formData.lastSeenLocation,
       };
 
-      const response = await fetch(
-        "http://localhost:5000/api/report-lost-item",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(newItem),
-        }
-      );
+      const response = await apiFetch("/api/report-lost-item", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newItem),
+      });
 
       // Reset form
       setFormData({

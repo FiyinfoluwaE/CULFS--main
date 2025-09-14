@@ -1,4 +1,3 @@
-
 # CULfs Backend API
 
 This is the Flask backend for the Covenant University Lost and Found System (CULfs).
@@ -27,6 +26,7 @@ pip install -r requirements.txt
 ### 3. Email Configuration
 
 Update the email configuration in `app.py`:
+
 ```python
 smtp_username = "your-email@gmail.com"
 smtp_password = "your-app-password"
@@ -38,29 +38,36 @@ smtp_password = "your-app-password"
 python app.py
 ```
 
-The API will be available at `http://localhost:5000`
+When running locally the API will be available at `http://localhost:5000`.
+If you deploy the backend (for example to Railway), use the deployed URL in the frontend by setting `VITE_API_URL`.
+Example deployed backend for this project: `https://culfs-main-production.up.railway.app/`
 
 ## API Endpoints
 
 ### Authentication
+
 - `POST /api/register` - Register new user
 - `POST /api/login` - Login user
 
 ### Lost Items
+
 - `POST /api/report-lost-item` - Report a lost item
 - `GET /api/lost-items/<user_id>` - Get user's lost items
 
 ### Found Items
+
 - `POST /api/log-found-item` - Log a found item
 - `GET /api/admin/found-items` - Get all found items (admin only)
 
 ### Admin
+
 - `GET /api/admin/lost-items` - Get all lost items
 - `POST /api/init-db` - Initialize database with default data
 
 ## Database Schema
 
 The system uses the following main tables:
+
 - `users` - System users (students, staff, admin)
 - `students` - Student-specific information
 - `staff` - Staff-specific information

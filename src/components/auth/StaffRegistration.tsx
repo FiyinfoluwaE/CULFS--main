@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft } from "lucide-react";
+import apiFetch from "@/lib/api";
 
 interface User {
   id: string;
@@ -123,7 +124,7 @@ export const StaffRegistration = ({
       // Map department to officeId
       const officeId = departmentToOfficeId[formData.department] || "ADMIN";
 
-      const response = await fetch("http://localhost:5000/api/register", {
+      const response = await apiFetch("/api/register", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

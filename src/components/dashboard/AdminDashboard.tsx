@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Bell } from "lucide-react";
 import { differenceInDays, parseISO } from "date-fns";
+import apiFetch, { apiBase } from "@/lib/api";
 
 interface User {
   id: string;
@@ -128,13 +129,10 @@ export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
   };
 
   const fetchFoundItems = async () => {
-    const response = await fetch(
-      `http://localhost:5000/api/admin/found-items`,
-      {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    const response = await apiFetch(`/api/admin/found-items`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
 
     const items = await response.json();
     console.log(items);
@@ -143,7 +141,7 @@ export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
   };
 
   const fetchLostItems = async () => {
-    const response = await fetch(`http://localhost:5000/api/admin/lost-items`, {
+    const response = await apiFetch(`/api/admin/lost-items`, {
       method: "GET",
       headers: { "Content-Type": "application/json" },
     });
@@ -158,13 +156,13 @@ export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
     fetchFoundItems();
     fetchLostItems();
     // Fetch all-time stats
-    fetch("http://localhost:5000/api/admin/stats")
+    apiFetch("/api/admin/stats")
       .then((res) => res.json())
       .then((data) => {
         if (data.success) setStats(data);
       });
     // Fetch lost item names for claim button logic
-    fetch("http://localhost:5000/api/admin/lost-item-names")
+    apiFetch("/api/admin/lost-item-names")
       .then((res) => res.json())
       .then((data) => {
         if (data.success) setLostItemNames(data.names);
@@ -187,8 +185,8 @@ export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
   };
 
   const handleMarkAsFound = async (item: LostItem) => {
-    const res = await fetch(
-      `http://localhost:5000/api/lost-items/${item.caseNumber}/mark-found`,
+    const res = await apiFetch(
+      `/api/lost-items/${item.caseNumber}/mark-found`,
       { method: "POST" }
     );
     const data = await res.json();
@@ -216,8 +214,8 @@ export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
 
   const handleSendContact = async () => {
     if (!selectedLostItem) return;
-    const res = await fetch(
-      `http://localhost:5000/api/lost-items/${selectedLostItem.caseNumber}/notify`,
+    const res = await apiFetch(
+      `/api/lost-items/${selectedLostItem.caseNumber}/notify`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -249,8 +247,8 @@ export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
 
   const handleConfirmMatch = async () => {
     if (!selectedFoundItem || !matchCaseNumber) return;
-    const res = await fetch(
-      `http://localhost:5000/api/found-items/${selectedFoundItem.foundItemId}/match`,
+    const res = await apiFetch(
+      `/api/found-items/${selectedFoundItem.foundItemId}/match`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -277,8 +275,8 @@ export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
   };
 
   const handleMarkAsClaimed = async (item: FoundItem) => {
-    const res = await fetch(
-      `http://localhost:5000/api/found-items/${item.foundItemId}/mark-claimed`,
+    const res = await apiFetch(
+      `/api/found-items/${item.foundItemId}/mark-claimed`,
       { method: "POST" }
     );
     const data = await res.json();
@@ -302,9 +300,7 @@ export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
   const handleShowNotifications = async () => {
     setShowNotifications(true);
     setLoadingNotifications(true);
-    const res = await fetch(
-      `http://localhost:5000/api/notifications/${user.id}`
-    );
+    const res = await apiFetch(`/api/notifications/${user.id}`);
     const data = await res.json();
     setNotifications(data.notifications || []);
     setLoadingNotifications(false);
@@ -322,10 +318,9 @@ export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
   // --- NEW: Delete and Archive handlers ---
   const handleDeleteLostItem = async (item: LostItem) => {
     if (!window.confirm("Are you sure you want to delete this report?")) return;
-    const res = await fetch(
-      `http://localhost:5000/api/lost-items/${item.caseNumber}`,
-      { method: "DELETE" }
-    );
+    const res = await apiFetch(`/api/lost-items/${item.caseNumber}`, {
+      method: "DELETE",
+    });
     const data = await res.json();
     if (data.success) {
       toast({
@@ -344,10 +339,9 @@ export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
   };
 
   const handleArchiveLostItem = async (item: LostItem) => {
-    const res = await fetch(
-      `http://localhost:5000/api/lost-items/${item.caseNumber}/archive`,
-      { method: "POST" }
-    );
+    const res = await apiFetch(`/api/lost-items/${item.caseNumber}/archive`, {
+      method: "POST",
+    });
     const data = await res.json();
     if (data.success) {
       toast({
@@ -366,14 +360,11 @@ export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
   };
 
   const handleArchiveFoundItem = async (item: FoundItem) => {
-    const res = await fetch(
-      `http://localhost:5000/api/found-items/${item.foundItemId}/archive`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ disposition: "Returned_to_Owner" }),
-      }
-    );
+    const res = await apiFetch(`/api/found-items/${item.foundItemId}/archive`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ disposition: "Returned_to_Owner" }),
+    });
     const data = await res.json();
     if (data.success) {
       toast({

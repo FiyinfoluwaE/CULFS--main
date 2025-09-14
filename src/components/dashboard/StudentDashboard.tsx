@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { ReportLostItemForm } from "@/components/forms/ReportLostItemForm";
 import { Bell } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import apiFetch from "@/lib/api";
 
 interface User {
   id: string;
@@ -104,13 +105,10 @@ export const StudentDashboard = ({ user, onLogout }: StudentDashboardProps) => {
   };
 
   const fetchLostItems = async () => {
-    const response = await fetch(
-      `http://localhost:5000/api/lost-items/${user.id}`,
-      {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    const response = await apiFetch(`/api/lost-items/${user.id}`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
 
     const items = await response.json();
     console.log(items);
@@ -124,10 +122,9 @@ export const StudentDashboard = ({ user, onLogout }: StudentDashboardProps) => {
   // --- NEW: Delete and Archive handlers ---
   const handleDeleteLostItem = async (item: LostItem) => {
     if (!window.confirm("Are you sure you want to delete this report?")) return;
-    const res = await fetch(
-      `http://localhost:5000/api/lost-items/${item.caseNumber}`,
-      { method: "DELETE" }
-    );
+    const res = await apiFetch(`/api/lost-items/${item.caseNumber}`, {
+      method: "DELETE",
+    });
     const data = await res.json();
     if (data.success) {
       toast({
@@ -148,9 +145,7 @@ export const StudentDashboard = ({ user, onLogout }: StudentDashboardProps) => {
   const handleShowNotifications = async () => {
     setShowNotifications(true);
     setLoadingNotifications(true);
-    const res = await fetch(
-      `http://localhost:5000/api/notifications/${user.id}`
-    );
+    const res = await apiFetch(`/api/notifications/${user.id}`);
     const data = await res.json();
     setNotifications(data.notifications || []);
     setLoadingNotifications(false);

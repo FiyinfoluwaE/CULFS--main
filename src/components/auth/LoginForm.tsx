@@ -1,4 +1,3 @@
-
 // import { useState } from 'react';
 // import { Button } from "@/components/ui/button";
 // import { Input } from "@/components/ui/input";
@@ -116,20 +115,18 @@
 //   );
 // };
 
-
-
-
-import { useState } from 'react';
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import apiFetch from "@/lib/api";
 
 interface User {
   id: string;
   name: string;
   email: string;
-  role: 'student' | 'staff' | 'admin';
+  role: "student" | "staff" | "admin";
   matricNo?: string;
   staffId?: string;
 }
@@ -139,8 +136,8 @@ interface LoginFormProps {
 }
 
 export const LoginForm = ({ onLogin }: LoginFormProps) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
@@ -149,9 +146,9 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
     setLoading(true);
 
     try {
-      const response = await fetch('http://localhost:5000/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await apiFetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
 
@@ -164,7 +161,7 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
           description: "Welcome to CULfs!",
         });
       } else {
-        throw new Error(result.message || 'Login failed');
+        throw new Error(result.message || "Login failed");
       }
     } catch (error: any) {
       toast({
@@ -208,7 +205,7 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
         className="w-full bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800"
         disabled={loading}
       >
-        {loading ? 'Signing In...' : 'Sign In'}
+        {loading ? "Signing In..." : "Sign In"}
       </Button>
     </form>
   );
