@@ -913,6 +913,102 @@ def get_lost_item_names():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 400
 
+
+@app.route('/api/delete-admin', methods=['POST'])
+def delete_admin():
+    """Delete an admin user.
+
+    Security:
+    - If ADMIN_SETUP_KEY is set in environment, the same key must be provided in the
+      request body as 'setupKey'.
+    - If ADMIN_SETUP_KEY is not set, the endpoint requires 'force': true and will
+      refuse to delete the last remaining admin.
+
+    Body parameters (JSON):
+    - userId (string) OR email (string) : identifies the admin to delete
+    - setupKey (string) : required when ADMIN_SETUP_KEY is set
+    - force (boolean) : if true, will attempt to cascade-delete dependent records
+    """
+    data = request.get_json() or {}
+
+    # Identify target
+    user = None
+    if data.get('userId'):
+        user = User.query.get(data.get('userId'))
+    elif data.get('email'):
+        user = User.query.filter_by(email_address=data.get('email')).first()
+    else:
+        return jsonify({'success': False, 'message': 'userId or email required'}), 400
+
+    if not user:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+
+    if user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Target user is not an admin'}), 400
+
+    # Security: require ADMIN_SETUP_KEY if configured
+    setup_key_env = os.environ.get('ADMIN_SETUP_KEY')
+    if setup_key_env:
+        if data.get('setupKey') != setup_key_env:
+            return jsonify({'success': False, 'message': 'Invalid setup key'}), 403
+    else:
+        # No setup key configured → be conservative: require force and ensure not last admin
+        if not data.get('force'):
+            return jsonify({'success': False, 'message': 'This instance has no ADMIN_SETUP_KEY; pass "force": true to confirm deletion.'}), 403
+        total_admins = User.query.filter_by(role='admin').count()
+        if total_admins <= 1:
+            return jsonify({'success': False, 'message': 'Cannot delete the last admin without ADMIN_SETUP_KEY configured.'}), 403
+
+    # Check dependent records
+    user_id = user.user_id
+    student_count = Student.query.filter_by(user_id=user_id).count()
+    staff_count = Staff.query.filter_by(user_id=user_id).count()
+    lost_count = LostItems.query.filter_by(user_id=user_id).count()
+    notif_count = Notifications.query.filter_by(user_id=user_id).count()
+
+    dependent_summary = {
+        'students': student_count,
+        'staff': staff_count,
+        'lost_items': lost_count,
+        'notifications': notif_count
+    }
+
+    force = bool(data.get('force'))
+    if (student_count or staff_count or lost_count or notif_count) and not force:
+        return jsonify({'success': False, 'message': 'User has dependent records. Pass "force": true to cascade delete.', 'dependents': dependent_summary}), 400
+
+    # Proceed with deletion (cascade if force)
+    try:
+        # Delete notifications
+        if notif_count:
+            Notifications.query.filter_by(user_id=user_id).delete()
+
+        # Delete student/staff rows
+        if student_count:
+            Student.query.filter_by(user_id=user_id).delete()
+        if staff_count:
+            Staff.query.filter_by(user_id=user_id).delete()
+
+        # For lost items: delete matches/archives referencing the case_numbers, then delete lost items
+        if lost_count:
+            losts = LostItems.query.filter_by(user_id=user_id).all()
+            case_numbers = [l.case_number for l in losts]
+            if case_numbers:
+                # Delete matches by case_number
+                Matches.query.filter(Matches.case_number.in_(case_numbers)).delete(synchronize_session=False)
+                # Delete archives referencing case_number
+                Archives.query.filter(Archives.case_number.in_(case_numbers)).delete(synchronize_session=False)
+                # Delete lost items
+                LostItems.query.filter(LostItems.user_id == user_id).delete(synchronize_session=False)
+
+        # Finally delete the user
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Admin deleted', 'dependents_removed': force}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 if __name__ == "__main__":
     from waitress import serve
     import os
