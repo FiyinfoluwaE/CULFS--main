@@ -727,6 +727,20 @@ def delete_lost_item(case_number):
         # Only allow delete if status is Reported or Unclaimed
         if lost_item.status not in ['Reported', 'Unclaimed']:
             return jsonify({'success': False, 'message': 'Cannot delete this report.'}), 400
+        # Remove dependent records that reference this lost item to satisfy FK constraints
+        try:
+            # Notifications reference lost_items.case_number
+            Notifications.query.filter_by(case_number=case_number).delete(synchronize_session=False)
+            # Matches reference lost_items.case_number
+            Matches.query.filter(Matches.case_number == case_number).delete(synchronize_session=False)
+            # Archives reference lost_items.case_number
+            Archives.query.filter(Archives.case_number == case_number).delete(synchronize_session=False)
+        except Exception as e:
+            # If dependent deletes fail, rollback and return error
+            db.session.rollback()
+            print(f"[ERROR] Failed to delete dependent records for {case_number}: {e}")
+            return jsonify({'success': False, 'message': 'Failed to remove dependent records'}), 500
+
         db.session.delete(lost_item)
         db.session.commit()
         return jsonify({'success': True, 'message': 'Lost item deleted.'})

@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { ReportLostItemForm } from "@/components/forms/ReportLostItemForm";
 import { Bell } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import apiFetch from "@/lib/api";
+import apiFetch, { apiBase } from "@/lib/api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 interface User {
@@ -130,14 +130,28 @@ export const StudentDashboard = ({ user, onLogout }: StudentDashboardProps) => {
     string
   >({
     mutationFn: async (caseNumber: string) => {
+      const url = `${apiBase}/api/lost-items/${encodeURIComponent(caseNumber)}`;
+      console.debug("DELETE request URL:", url);
       const res = await apiFetch(`/api/lost-items/${caseNumber}`, {
         method: "DELETE",
       });
-      const json = await res.json();
-      if (!res.ok || (json && json.success === false)) {
-        throw new Error(json?.message || "Delete failed");
+      type DeleteResponse = { success: boolean; message?: string };
+      let json: unknown = null;
+      try {
+        json = await res.json();
+      } catch (e) {
+        // non-JSON response
       }
-      return json;
+      const serverMessage =
+        typeof json === "object" && json !== null && "message" in json
+    ? (json as DeleteResponse).message
+          : null;
+      if (!res.ok || (json && typeof json === "object" && (json as DeleteResponse).success === false)) {
+        const serverMsg = serverMessage || res.statusText || "Delete failed";
+        throw new Error(`HTTP ${res.status}: ${serverMsg}`);
+      }
+      // Cast to expected response for callers
+      return (json as DeleteResponse) || { success: true };
     },
     onSuccess(_, caseNumber) {
       toast({ title: "Deleted", description: "Report deleted", variant: "default" });
