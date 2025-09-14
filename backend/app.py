@@ -946,18 +946,13 @@ def delete_admin():
     if user.role != 'admin':
         return jsonify({'success': False, 'message': 'Target user is not an admin'}), 400
 
-    # Security: require ADMIN_SETUP_KEY if configured
+    # Security: require ADMIN_SETUP_KEY and validate provided setupKey
     setup_key_env = os.environ.get('ADMIN_SETUP_KEY')
-    if setup_key_env:
-        if data.get('setupKey') != setup_key_env:
-            return jsonify({'success': False, 'message': 'Invalid setup key'}), 403
-    else:
-        # No setup key configured → be conservative: require force and ensure not last admin
-        if not data.get('force'):
-            return jsonify({'success': False, 'message': 'This instance has no ADMIN_SETUP_KEY; pass "force": true to confirm deletion.'}), 403
-        total_admins = User.query.filter_by(role='admin').count()
-        if total_admins <= 1:
-            return jsonify({'success': False, 'message': 'Cannot delete the last admin without ADMIN_SETUP_KEY configured.'}), 403
+    if not setup_key_env:
+        # Deletion disabled when server has not configured the setup key
+        return jsonify({'success': False, 'message': 'ADMIN_SETUP_KEY not configured on this server; admin deletion is disabled.'}), 403
+    if data.get('setupKey') != setup_key_env:
+        return jsonify({'success': False, 'message': 'Invalid setup key'}), 403
 
     # Check dependent records
     user_id = user.user_id
