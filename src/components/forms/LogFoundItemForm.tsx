@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Upload } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import apiFetch from "@/lib/api";
 
 interface FoundItem {
@@ -49,7 +50,7 @@ export const LogFoundItemForm = ({
   });
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
-
+  const queryClient = useQueryClient();
   const locations = [
     "Library",
     "Computer Lab",
@@ -85,56 +86,64 @@ export const LogFoundItemForm = ({
     setFormData({ ...formData, images: files });
   };
 
+  const mutation = useMutation<any, any, FoundItem, unknown>(
+    (payload: FoundItem) =>
+      apiFetch("/api/log-found-item", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).then((r) => r.json()),
+    {
+      onSuccess: (data, variables) => {
+        // Reset form
+        setFormData({
+          itemName: "",
+          itemColor: "",
+          description: "",
+          foundDate: "",
+          foundLocation: "",
+          officeId: "",
+          images: [],
+        });
+
+        toast({
+          title: "Found Item Logged Successfully",
+          description: `Found item ID: ${variables.foundItemId}. System will check for matches automatically.`,
+        });
+
+        // Invalidate foundItems queries so lists update automatically
+        queryClient.invalidateQueries({ queryKey: ["foundItems"] });
+
+        onFoundItemLogged(variables);
+        setLoading(false);
+      },
+      onError: () => {
+        toast({
+          title: "Logging Failed",
+          description: "Please try again later.",
+          variant: "destructive",
+        });
+        setLoading(false);
+      },
+    }
+  );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    try {
-      // Simulate API call
-      const foundItemId = generateFoundItemId();
+    const foundItemId = generateFoundItemId();
+    const newFoundItem: FoundItem = {
+      foundItemId: foundItemId,
+      officeId: formData.officeId,
+      itemName: formData.itemName,
+      itemColor: formData.itemColor,
+      foundDate: formData.foundDate,
+      foundLocation: formData.foundLocation,
+      description: formData.description,
+    };
 
-      const newFoundItem: FoundItem = {
-        foundItemId: foundItemId,
-        officeId: formData.officeId,
-        itemName: formData.itemName,
-        itemColor: formData.itemColor,
-        foundDate: formData.foundDate,
-        foundLocation: formData.foundLocation,
-        // status: 'Found',
-        description: formData.description,
-      };
-      const response = await apiFetch("/api/log-found-item", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newFoundItem),
-      });
-
-      // Reset form
-      setFormData({
-        itemName: "",
-        itemColor: "",
-        description: "",
-        foundDate: "",
-        foundLocation: "",
-        officeId: "",
-        images: [],
-      });
-
-      toast({
-        title: "Found Item Logged Successfully",
-        description: `Found item ID: ${foundItemId}. System will check for matches automatically.`,
-      });
-
-      onFoundItemLogged(newFoundItem);
-    } catch (error) {
-      toast({
-        title: "Logging Failed",
-        description: "Please try again later.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
+    mutation.mutate(newFoundItem);
   };
 
   return (

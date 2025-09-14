@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { ReportLostItemForm } from "@/components/forms/ReportLostItemForm";
 import { Bell } from "lucide-react";
 import apiFetch from "@/lib/api";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 interface User {
   id: string;
@@ -77,6 +78,18 @@ interface DepartmentData {
   office: string;
 }
 
+interface StaffResponse {
+  success: boolean;
+  staff?: {
+    officeId?: string;
+  };
+}
+
+interface DepartmentResponse extends Partial<DepartmentData> {
+  success?: boolean;
+  message?: string;
+}
+
 interface StaffDashboardProps {
   user: User;
   onLogout: () => void;
@@ -100,6 +113,7 @@ export const StaffDashboard = ({ user, onLogout }: StaffDashboardProps) => {
     useState(false);
   const [departmentError, setDepartmentError] = useState<string | null>(null);
   const [departmentName, setDepartmentName] = useState<string>("");
+  const queryClient = useQueryClient();
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -121,69 +135,109 @@ export const StaffDashboard = ({ user, onLogout }: StaffDashboardProps) => {
   };
 
   const handleItemReported = (item: LostItem) => {
-    setReportedItems([item, ...reportedItems]);
+    // invalidate reported items for this user
+    queryClient.invalidateQueries({ queryKey: ["reportedItems", user.id] });
     setActiveTab("dashboard");
   };
-
-  const fetchLostItems = async () => {
-    const response = await apiFetch(`/api/lost-items/${user.id}`, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-    });
-
-    const items = await response.json();
-    console.log(items);
-
-    setReportedItems(items.items);
-  };
+  const { data: reportedData } = useQuery<{ items: LostItem[] }, Error>({
+    queryKey: ["reportedItems", user.id],
+    queryFn: async () => {
+      const res = await apiFetch(`/api/lost-items/${user.id}`);
+      const json = await res.json();
+      return json as { items: LostItem[] };
+    },
+  });
 
   useEffect(() => {
-    fetchLostItems();
-  }, []);
+    if (reportedData && reportedData.items)
+      setReportedItems(reportedData.items);
+  }, [reportedData]);
+
+  const { data: notificationsData, refetch: refetchNotifications } = useQuery<
+    Notification[] | { notifications: Notification[] },
+    Error
+  >({
+    queryKey: ["notifications", user.id],
+    queryFn: async () => {
+      const res = await apiFetch(`/api/notifications/${user.id}`);
+      const json = await res.json();
+      if (json && Array.isArray(json.notifications))
+        return json.notifications as Notification[];
+      if (Array.isArray(json)) return json as Notification[];
+      return [] as Notification[];
+    },
+    enabled: false,
+  });
+
+  useEffect(() => {
+    if (notificationsData)
+      setNotifications((notificationsData as Notification[]) || []);
+  }, [notificationsData]);
 
   const handleShowNotifications = async () => {
     setShowNotifications(true);
     setLoadingNotifications(true);
-    const res = await apiFetch(`/api/notifications/${user.id}`);
-    const data = await res.json();
-    setNotifications(data.notifications || []);
+    await refetchNotifications();
     setLoadingNotifications(false);
   };
 
+  // React Query: fetch staff record (to obtain officeId), then fetch department updates
+  const staffQuery = useQuery({
+    queryKey: ["staff", user.staffId],
+    queryFn: async () => {
+      if (!user.staffId) return null;
+      const res = await apiFetch(
+        `/api/staff/${encodeURIComponent(user.staffId)}`
+      );
+      return res.json();
+    },
+    enabled: user.role === "staff" && !!user.staffId,
+  });
+
+  const officeId =
+    ((staffQuery.data as StaffResponse | null) &&
+      (staffQuery.data as StaffResponse).staff?.officeId) ||
+    null;
+
+  const departmentQuery = useQuery({
+    queryKey: ["department-lost-found", officeId],
+    queryFn: async () => {
+      if (!officeId) return null;
+      const res = await apiFetch(`/api/department-lost-found/${officeId}`);
+      return res.json();
+    },
+    enabled: !!officeId,
+  });
+
+  // Update local state from the department query results
   useEffect(() => {
-    // Fetch staff officeId and then fetch department lost/found updates
-    const fetchDepartmentUpdates = async () => {
-      if (user.role !== "staff" || !user.staffId) return;
-      setLoadingDepartmentUpdates(true);
-      setDepartmentError(null);
-      try {
-        // Fetch staff record to get officeId
-        const staffRes = await apiFetch(
-          `/api/staff/${encodeURIComponent(user.staffId!)}`
-        );
-        const staffData = await staffRes.json();
-        if (!staffData.success) throw new Error("Could not fetch staff office");
-        const officeId = staffData.staff.officeId;
+    setLoadingDepartmentUpdates(
+      !!departmentQuery.isFetching || !!staffQuery.isFetching
+    );
+    if (departmentQuery.isError) {
+      const err = departmentQuery.error as Error | null;
+      setDepartmentError(err?.message || "Error fetching updates");
+      return;
+    }
 
-        // Fetch department lost/found updates
-        const res = await apiFetch(`/api/department-lost-found/${officeId}`);
-        const data = await res.json();
-        if (!data.success)
-          throw new Error(data.message || "Failed to fetch updates");
-
-        setDepartmentLostItems(data.lostItems || []);
-        setDepartmentFoundItems(data.foundItems || []);
-        setDepartmentName(data.office || "");
-      } catch (err) {
-        const error = err as Error;
-        setDepartmentError(error.message || "Error fetching updates");
-        console.error("Department update error:", error);
-      } finally {
-        setLoadingDepartmentUpdates(false);
+    if (departmentQuery.data) {
+      const data = departmentQuery.data as DepartmentResponse;
+      if (data.success === false) {
+        setDepartmentError(data.message || "Error fetching updates");
+        return;
       }
-    };
-    fetchDepartmentUpdates();
-  }, [user]);
+      setDepartmentLostItems(data.lostItems || []);
+      setDepartmentFoundItems(data.foundItems || []);
+      setDepartmentName(data.office || "");
+      setDepartmentError(null);
+    }
+  }, [
+    departmentQuery.data,
+    departmentQuery.isFetching,
+    departmentQuery.isError,
+    departmentQuery.error,
+    staffQuery.isFetching,
+  ]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-white">

@@ -12,6 +12,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft } from "lucide-react";
 import apiFetch from "@/lib/api";
+import { useMutation } from "@tanstack/react-query";
 
 interface User {
   id: string;
@@ -65,53 +66,63 @@ export const StudentRegistration = ({
     e.preventDefault();
     setLoading(true);
 
-    try {
-      // Validation
-      if (!formData.email.endsWith("@stu.cu.edu.ng")) {
-        throw new Error("Email must end with @stu.cu.edu.ng");
-      }
+    // Basic validations
+    if (!formData.email.endsWith("@stu.cu.edu.ng")) {
+      toast({
+        title: "Registration Failed",
+        description: "Email must end with @stu.cu.edu.ng",
+        variant: "destructive",
+      });
+      setLoading(false);
+      return;
+    }
 
-      if (formData.password !== formData.confirmPassword) {
-        throw new Error("Passwords do not match");
-      }
+    if (formData.password !== formData.confirmPassword) {
+      toast({
+        title: "Registration Failed",
+        description: "Passwords do not match",
+        variant: "destructive",
+      });
+      setLoading(false);
+      return;
+    }
 
-      if (formData.password.length < 6) {
-        throw new Error("Password must be at least 6 characters");
-      }
+    if (formData.password.length < 6) {
+      toast({
+        title: "Registration Failed",
+        description: "Password must be at least 6 characters",
+        variant: "destructive",
+      });
+      setLoading(false);
+      return;
+    }
 
-      // Simulate API call
-      // await new Promise(resolve => setTimeout(resolve, 1500));
+    registerMutation.mutate({ ...formData });
+  };
 
-      // const newUser: User = {
-      //   id: `student-${Date.now()}`,
-      //   name: formData.name,
-      //   email: formData.email,
-      //   role: 'student',
-      //   matricNo: formData.matricNo
-      // };
-      const response = await apiFetch("/api/register", {
+  const registerMutation = useMutation<
+    { success: boolean; user_id: string },
+    Error,
+    typeof formData
+  >({
+    mutationFn: async (payload) => {
+      const res = await apiFetch("/api/register", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: formData.name,
+          name: payload.name,
           role: "student",
-          credentials: formData.regNo, // optional: university_credentials
-          email: formData.email,
-          password: formData.password,
-          matricNo: formData.matricNo,
-          department: formData.department,
-          level: formData.level,
+          credentials: payload.regNo,
+          email: payload.email,
+          password: payload.password,
+          matricNo: payload.matricNo,
+          department: payload.department,
+          level: payload.level,
         }),
       });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || "Registration failed");
-      }
-
+      return res.json();
+    },
+    onSuccess(data) {
       const newUser: User = {
         id: data.user_id,
         name: formData.name,
@@ -119,26 +130,22 @@ export const StudentRegistration = ({
         role: "student",
         matricNo: formData.matricNo,
       };
-
       toast({
         title: "Registration Successful",
         description: "Your student account has been created successfully!",
       });
-
       onRegister(newUser);
-    } catch (error) {
+      setLoading(false);
+    },
+    onError(err) {
       toast({
         title: "Registration Failed",
-        description:
-          error instanceof Error
-            ? error.message
-            : "Please check your information",
+        description: err.message || "Please check your information",
         variant: "destructive",
       });
-    } finally {
       setLoading(false);
-    }
-  };
+    },
+  });
 
   return (
     <div>

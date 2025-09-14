@@ -20,6 +20,7 @@ import { ReportLostItemForm } from "@/components/forms/ReportLostItemForm";
 import { Bell } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import apiFetch from "@/lib/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 interface User {
   id: string;
@@ -75,6 +76,8 @@ export const StudentDashboard = ({ user, onLogout }: StudentDashboardProps) => {
   const [activeTab, setActiveTab] = useState<
     "dashboard" | "report" | "history"
   >("dashboard");
+  const queryClient = useQueryClient();
+
   const [reportedItems, setReportedItems] = useState<LostItem[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -104,50 +107,77 @@ export const StudentDashboard = ({ user, onLogout }: StudentDashboardProps) => {
     setActiveTab("dashboard");
   };
 
-  const fetchLostItems = async () => {
-    const response = await apiFetch(`/api/lost-items/${user.id}`, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-    });
+  const { data: reportedData, refetch: refetchReported } = useQuery<
+    LostItem[],
+    Error
+  >({
+    queryKey: ["reportedItems", user.id],
+    queryFn: async () => {
+      const response = await apiFetch(`/api/lost-items/${user.id}`);
+      const json = await response.json();
+      return json.items as LostItem[];
+    },
+  });
 
-    const items = await response.json();
-    console.log(items);
-
-    setReportedItems(items.items);
-  };
-
+  // keep local state in sync with query results
   useEffect(() => {
-    fetchLostItems();
-  }, []);
+    if (reportedData) setReportedItems(reportedData || []);
+  }, [reportedData]);
   // --- NEW: Delete and Archive handlers ---
-  const handleDeleteLostItem = async (item: LostItem) => {
-    if (!window.confirm("Are you sure you want to delete this report?")) return;
-    const res = await apiFetch(`/api/lost-items/${item.caseNumber}`, {
-      method: "DELETE",
-    });
-    const data = await res.json();
-    if (data.success) {
+  const deleteMutation = useMutation<
+    { success: boolean; message?: string },
+    Error,
+    string
+  >({
+    mutationFn: async (caseNumber: string) => {
+      const res = await apiFetch(`/api/lost-items/${caseNumber}`, {
+        method: "DELETE",
+      });
+      return res.json();
+    },
+    onSuccess() {
       toast({
         title: "Deleted",
-        description: data.message,
+        description: "Report deleted",
         variant: "default",
       });
-      fetchLostItems();
-    } else {
+      queryClient.invalidateQueries({ queryKey: ["reportedItems", user.id] });
+    },
+    onError() {
       toast({
         title: "Error",
-        description: data.message,
+        description: "Could not delete report",
         variant: "destructive",
       });
-    }
+    },
+  });
+
+  const handleDeleteLostItem = (item: LostItem) => {
+    if (!window.confirm("Are you sure you want to delete this report?")) return;
+    deleteMutation.mutate(item.caseNumber);
   };
+
+  const { data: notificationsData, refetch: refetchNotifications } = useQuery<
+    Notification[],
+    Error
+  >({
+    queryKey: ["notifications", user.id],
+    queryFn: async () => {
+      const res = await apiFetch(`/api/notifications/${user.id}`);
+      const json = await res.json();
+      return json.notifications as Notification[];
+    },
+    enabled: false,
+  });
+
+  useEffect(() => {
+    if (notificationsData) setNotifications(notificationsData || []);
+  }, [notificationsData]);
 
   const handleShowNotifications = async () => {
     setShowNotifications(true);
     setLoadingNotifications(true);
-    const res = await apiFetch(`/api/notifications/${user.id}`);
-    const data = await res.json();
-    setNotifications(data.notifications || []);
+    await refetchNotifications();
     setLoadingNotifications(false);
   };
 

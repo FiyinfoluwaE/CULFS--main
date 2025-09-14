@@ -26,6 +26,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Bell } from "lucide-react";
 import { differenceInDays, parseISO } from "date-fns";
 import apiFetch, { apiBase } from "@/lib/api";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface User {
   id: string;
@@ -71,6 +72,18 @@ interface AdminDashboardProps {
   onLogout: () => void;
 }
 
+interface StatsResponse {
+  total_lost: number;
+  total_found: number;
+  total_claimed: number;
+  total_matched: number;
+  total_archived: number;
+}
+
+interface LostNamesResponse {
+  names: string[];
+}
+
 export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
   const [foundItems, setFoundItems] = useState<FoundItem[]>([]);
   const [lostItems, setLostItems] = useState<LostItem[]>([]);
@@ -102,6 +115,7 @@ export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
   const [lostItemNames, setLostItemNames] = useState<string[]>([]);
 
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -123,51 +137,76 @@ export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
   };
 
   const handleFoundItemLogged = (newFoundItem: FoundItem) => {
-    setFoundItems([newFoundItem, ...foundItems]);
-    fetchFoundItems();
-    fetchLostItems();
+    // prefer invalidation + relying on query cache
+    queryClient.invalidateQueries({ queryKey: ["foundItems"] });
+    queryClient.invalidateQueries({ queryKey: ["lostItems"] });
   };
+  const { data: foundItemsData } = useQuery({
+    queryKey: ["foundItems"],
+    queryFn: async () => {
+      const res = await apiFetch(`/api/admin/found-items`);
+      const json = (await res.json()) as { items: FoundItem[] };
+      return json;
+    },
+  });
 
-  const fetchFoundItems = async () => {
-    const response = await apiFetch(`/api/admin/found-items`, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-    });
+  const { data: lostItemsData } = useQuery({
+    queryKey: ["lostItems"],
+    queryFn: async () => {
+      const res = await apiFetch(`/api/admin/lost-items`);
+      const json = (await res.json()) as { items: LostItem[] };
+      return json;
+    },
+  });
 
-    const items = await response.json();
-    console.log(items);
-
-    setFoundItems(items.items);
-  };
-
-  const fetchLostItems = async () => {
-    const response = await apiFetch(`/api/admin/lost-items`, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-    });
-
-    const items = await response.json();
-    console.log(items);
-
-    setLostItems(items.items);
-  };
+  // Keep local state for display but prefer query results when available
+  useEffect(() => {
+    if (foundItemsData && foundItemsData.items)
+      setFoundItems(foundItemsData.items);
+  }, [foundItemsData]);
 
   useEffect(() => {
-    fetchFoundItems();
-    fetchLostItems();
-    // Fetch all-time stats
-    apiFetch("/api/admin/stats")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success) setStats(data);
-      });
-    // Fetch lost item names for claim button logic
-    apiFetch("/api/admin/lost-item-names")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success) setLostItemNames(data.names);
-      });
+    if (lostItemsData && lostItemsData.items) setLostItems(lostItemsData.items);
+  }, [lostItemsData]);
+
+  useEffect(() => {
+    // placeholder - migration to react-query below
   }, []);
+
+  // React Query: stats
+  const { data: statsData } = useQuery<StatsResponse, Error>({
+    queryKey: ["adminStats"],
+    queryFn: async () => {
+      const res = await apiFetch("/api/admin/stats");
+      const json = (await res.json()) as StatsResponse;
+      return json;
+    },
+  });
+
+  useEffect(() => {
+    if (statsData && typeof statsData.total_lost === "number")
+      setStats({
+        total_lost: statsData.total_lost,
+        total_found: statsData.total_found,
+        total_claimed: statsData.total_claimed,
+        total_matched: statsData.total_matched,
+        total_archived: statsData.total_archived,
+      });
+  }, [statsData]);
+
+  const { data: lostNamesData } = useQuery<LostNamesResponse, Error>({
+    queryKey: ["lostItemNames"],
+    queryFn: async () => {
+      const res = await apiFetch("/api/admin/lost-item-names");
+      const json = (await res.json()) as LostNamesResponse;
+      return json;
+    },
+  });
+
+  useEffect(() => {
+    if (lostNamesData && Array.isArray(lostNamesData.names))
+      setLostItemNames(lostNamesData.names || []);
+  }, [lostNamesData]);
 
   const totalReports = lostItems.length;
   const totalFound = foundItems.length;
@@ -185,25 +224,7 @@ export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
   };
 
   const handleMarkAsFound = async (item: LostItem) => {
-    const res = await apiFetch(
-      `/api/lost-items/${item.caseNumber}/mark-found`,
-      { method: "POST" }
-    );
-    const data = await res.json();
-    if (data.success) {
-      toast({
-        title: "Marked as Found",
-        description: data.message,
-        variant: "default",
-      });
-      fetchLostItems();
-    } else {
-      toast({
-        title: "Error",
-        description: data.message,
-        variant: "destructive",
-      });
-    }
+    markFoundMutation.mutate(item.caseNumber);
   };
 
   const handleContactReporter = (item: LostItem) => {
@@ -214,29 +235,10 @@ export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
 
   const handleSendContact = async () => {
     if (!selectedLostItem) return;
-    const res = await apiFetch(
-      `/api/lost-items/${selectedLostItem.caseNumber}/notify`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: contactMessage }),
-      }
-    );
-    const data = await res.json();
-    if (data.success) {
-      toast({
-        title: "Notification Sent",
-        description: data.message,
-        variant: "default",
-      });
-      setShowContactModal(false);
-    } else {
-      toast({
-        title: "Error",
-        description: data.message,
-        variant: "destructive",
-      });
-    }
+    notifyMutation.mutate({
+      caseNumber: selectedLostItem.caseNumber,
+      message: contactMessage,
+    });
   };
 
   const handleMatchWithReport = (item: FoundItem) => {
@@ -247,62 +249,20 @@ export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
 
   const handleConfirmMatch = async () => {
     if (!selectedFoundItem || !matchCaseNumber) return;
-    const res = await apiFetch(
-      `/api/found-items/${selectedFoundItem.foundItemId}/match`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ caseNumber: matchCaseNumber }),
-      }
-    );
-    const data = await res.json();
-    if (data.success) {
-      toast({
-        title: "Items Matched",
-        description: data.message,
-        variant: "default",
-      });
-      setShowMatchModal(false);
-      fetchFoundItems();
-      fetchLostItems();
-    } else {
-      toast({
-        title: "Error",
-        description: data.message,
-        variant: "destructive",
-      });
-    }
+    matchMutation.mutate({
+      foundItemId: selectedFoundItem.foundItemId,
+      caseNumber: matchCaseNumber,
+    });
   };
 
   const handleMarkAsClaimed = async (item: FoundItem) => {
-    const res = await apiFetch(
-      `/api/found-items/${item.foundItemId}/mark-claimed`,
-      { method: "POST" }
-    );
-    const data = await res.json();
-    if (data.success) {
-      toast({
-        title: "Marked as Claimed",
-        description: data.message,
-        variant: "default",
-      });
-      fetchFoundItems();
-      fetchLostItems();
-    } else {
-      toast({
-        title: "Error",
-        description: data.message,
-        variant: "destructive",
-      });
-    }
+    markClaimedMutation.mutate(item.foundItemId);
   };
 
   const handleShowNotifications = async () => {
     setShowNotifications(true);
     setLoadingNotifications(true);
-    const res = await apiFetch(`/api/notifications/${user.id}`);
-    const data = await res.json();
-    setNotifications(data.notifications || []);
+    await refetchNotifications();
     setLoadingNotifications(false);
   };
 
@@ -318,70 +278,230 @@ export const AdminDashboard = ({ user, onLogout }: AdminDashboardProps) => {
   // --- NEW: Delete and Archive handlers ---
   const handleDeleteLostItem = async (item: LostItem) => {
     if (!window.confirm("Are you sure you want to delete this report?")) return;
-    const res = await apiFetch(`/api/lost-items/${item.caseNumber}`, {
-      method: "DELETE",
-    });
-    const data = await res.json();
-    if (data.success) {
-      toast({
-        title: "Deleted",
-        description: data.message,
-        variant: "default",
-      });
-      fetchLostItems();
-    } else {
-      toast({
-        title: "Error",
-        description: data.message,
-        variant: "destructive",
-      });
-    }
+    deleteLostMutation.mutate(item.caseNumber);
   };
 
   const handleArchiveLostItem = async (item: LostItem) => {
-    const res = await apiFetch(`/api/lost-items/${item.caseNumber}/archive`, {
-      method: "POST",
-    });
-    const data = await res.json();
-    if (data.success) {
-      toast({
-        title: "Archived",
-        description: data.message,
-        variant: "default",
-      });
-      fetchLostItems();
-    } else {
-      toast({
-        title: "Error",
-        description: data.message,
-        variant: "destructive",
-      });
-    }
+    archiveLostMutation.mutate(item.caseNumber);
   };
 
   const handleArchiveFoundItem = async (item: FoundItem) => {
-    const res = await apiFetch(`/api/found-items/${item.foundItemId}/archive`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ disposition: "Returned_to_Owner" }),
-    });
-    const data = await res.json();
-    if (data.success) {
+    archiveFoundMutation.mutate(item.foundItemId);
+  };
+
+  // mutations
+  const markFoundMutation = useMutation({
+    mutationFn: async (caseNumber: string) => {
+      const res = await apiFetch(`/api/lost-items/${caseNumber}/mark-found`, {
+        method: "POST",
+      });
+      return res.json();
+    },
+    onSuccess() {
       toast({
-        title: "Archived",
-        description: data.message,
+        title: "Marked as Found",
+        description: "Operation successful",
         variant: "default",
       });
-      fetchFoundItems();
-      fetchLostItems();
-    } else {
+      queryClient.invalidateQueries({ queryKey: ["lostItems"] });
+      queryClient.invalidateQueries({ queryKey: ["foundItems"] });
+    },
+    onError() {
       toast({
         title: "Error",
-        description: data.message,
+        description: "Could not mark as found",
         variant: "destructive",
       });
+    },
+  });
+
+  const notifyMutation = useMutation<
+    { success: boolean },
+    Error,
+    { caseNumber: string; message: string }
+  >({
+    mutationFn: async ({ caseNumber, message }) => {
+      const res = await apiFetch(`/api/lost-items/${caseNumber}/notify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+      return res.json();
+    },
+    onSuccess() {
+      toast({
+        title: "Notification Sent",
+        description: "Message sent",
+        variant: "default",
+      });
+      setShowContactModal(false);
+    },
+    onError() {
+      toast({
+        title: "Error",
+        description: "Could not send notification",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const matchMutation = useMutation<
+    { success: boolean },
+    Error,
+    { foundItemId: string; caseNumber: string }
+  >({
+    mutationFn: async ({ foundItemId, caseNumber }) => {
+      const res = await apiFetch(`/api/found-items/${foundItemId}/match`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caseNumber }),
+      });
+      return res.json();
+    },
+    onSuccess() {
+      toast({
+        title: "Items Matched",
+        description: "Match successful",
+        variant: "default",
+      });
+      setShowMatchModal(false);
+      queryClient.invalidateQueries({ queryKey: ["foundItems"] });
+      queryClient.invalidateQueries({ queryKey: ["lostItems"] });
+    },
+    onError() {
+      toast({
+        title: "Error",
+        description: "Could not match items",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const markClaimedMutation = useMutation<{ success: boolean }, Error, string>({
+    mutationFn: async (foundItemId: string) => {
+      const res = await apiFetch(
+        `/api/found-items/${foundItemId}/mark-claimed`,
+        { method: "POST" }
+      );
+      return res.json();
+    },
+    onSuccess() {
+      toast({
+        title: "Marked as Claimed",
+        description: "Operation successful",
+        variant: "default",
+      });
+      queryClient.invalidateQueries({ queryKey: ["foundItems"] });
+      queryClient.invalidateQueries({ queryKey: ["lostItems"] });
+    },
+    onError() {
+      toast({
+        title: "Error",
+        description: "Could not mark as claimed",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteLostMutation = useMutation<{ success: boolean }, Error, string>({
+    mutationFn: async (caseNumber: string) => {
+      const res = await apiFetch(`/api/lost-items/${caseNumber}`, {
+        method: "DELETE",
+      });
+      return res.json();
+    },
+    onSuccess() {
+      toast({
+        title: "Deleted",
+        description: "Report deleted",
+        variant: "default",
+      });
+      queryClient.invalidateQueries({ queryKey: ["lostItems"] });
+    },
+    onError() {
+      toast({
+        title: "Error",
+        description: "Could not delete report",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const archiveLostMutation = useMutation<{ success: boolean }, Error, string>({
+    mutationFn: async (caseNumber: string) => {
+      const res = await apiFetch(`/api/lost-items/${caseNumber}/archive`, {
+        method: "POST",
+      });
+      return res.json();
+    },
+    onSuccess() {
+      toast({
+        title: "Archived",
+        description: "Report archived",
+        variant: "default",
+      });
+      queryClient.invalidateQueries({ queryKey: ["lostItems"] });
+    },
+    onError() {
+      toast({
+        title: "Error",
+        description: "Could not archive report",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const archiveFoundMutation = useMutation<{ success: boolean }, Error, string>(
+    {
+      mutationFn: async (foundItemId: string) => {
+        const res = await apiFetch(`/api/found-items/${foundItemId}/archive`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ disposition: "Returned_to_Owner" }),
+        });
+        return res.json();
+      },
+      onSuccess() {
+        toast({
+          title: "Archived",
+          description: "Item archived",
+          variant: "default",
+        });
+        queryClient.invalidateQueries({ queryKey: ["foundItems"] });
+        queryClient.invalidateQueries({ queryKey: ["lostItems"] });
+      },
+      onError() {
+        toast({
+          title: "Error",
+          description: "Could not archive item",
+          variant: "destructive",
+        });
+      },
     }
-  };
+  );
+
+  // notifications query (used by handleShowNotifications)
+  const { data: notificationsData, refetch: refetchNotifications } = useQuery<
+    Notification[] | { notifications: Notification[] },
+    Error
+  >({
+    queryKey: ["notifications", user.id],
+    queryFn: async () => {
+      const res = await apiFetch(`/api/notifications/${user.id}`);
+      const json = await res.json();
+      // API returns { notifications: [] } — normalize to array
+      if (json && Array.isArray(json.notifications))
+        return json.notifications as Notification[];
+      if (Array.isArray(json)) return json as Notification[];
+      return [] as Notification[];
+    },
+    enabled: false,
+  });
+
+  useEffect(() => {
+    if (notificationsData)
+      setNotifications((notificationsData as Notification[]) || []);
+  }, [notificationsData]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-white">

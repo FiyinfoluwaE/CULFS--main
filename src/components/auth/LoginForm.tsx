@@ -121,6 +121,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import apiFetch from "@/lib/api";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface User {
   id: string;
@@ -141,37 +142,52 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+  const queryClient = useQueryClient();
 
-    try {
-      const response = await apiFetch("/api/login", {
+  const loginMutation = useMutation<
+    { success: boolean; user: User },
+    Error,
+    { email: string; password: string }
+  >({
+    mutationFn: async (creds: { email: string; password: string }) => {
+      const res = await apiFetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(creds),
       });
-
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        onLogin(result.user);
-        toast({
-          title: "Login Successful",
-          description: "Welcome to CULfs!",
-        });
-      } else {
-        throw new Error(result.message || "Login failed");
-      }
-    } catch (error: any) {
+      const json = (await res.json()) as {
+        success: boolean;
+        user?: User;
+        message?: string;
+      };
+      if (!res.ok || !json.success)
+        throw new Error(json.message || "Login failed");
+      return { success: true, user: json.user! } as {
+        success: boolean;
+        user: User;
+      };
+    },
+    onSuccess(data) {
+      onLogin(data.user);
+      queryClient.invalidateQueries({ queryKey: ["currentUser"] });
+      toast({ title: "Login Successful", description: "Welcome to CULfs!" });
+    },
+    onError(err: Error) {
       toast({
         title: "Login Failed",
-        description: error.message || "Invalid credentials or email domain",
+        description: err.message,
         variant: "destructive",
       });
-    } finally {
+    },
+    onSettled() {
       setLoading(false);
-    }
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    loginMutation.mutate({ email, password });
   };
 
   return (

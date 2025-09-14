@@ -20,6 +20,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Upload } from "lucide-react";
 import apiFetch from "@/lib/api";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface LostItem {
   userId: string;
@@ -101,28 +102,41 @@ export const ReportLostItemForm = ({
     e.preventDefault();
     setLoading(true);
 
-    try {
-      const caseNumber = generateCaseNumber();
+    const caseNumber = generateCaseNumber();
 
-      const newItem: LostItem = {
-        userId: userId,
-        caseNumber,
-        itemName: formData.itemName,
-        itemType: formData.itemType,
-        itemColor: formData.itemColor,
-        brand: formData.brand,
-        description: formData.description,
-        status: "Reported",
-        lastSeenDate: new Date().toISOString().split("T")[0],
-        lastSeenLocation: formData.lastSeenLocation,
-      };
+    const newItem: LostItem = {
+      userId: userId,
+      caseNumber,
+      itemName: formData.itemName,
+      itemType: formData.itemType,
+      itemColor: formData.itemColor,
+      brand: formData.brand,
+      description: formData.description,
+      status: "Reported",
+      lastSeenDate:
+        formData.lastSeenDate || new Date().toISOString().split("T")[0],
+      lastSeenLocation: formData.lastSeenLocation,
+    };
 
-      const response = await apiFetch("/api/report-lost-item", {
+    reportMutation.mutate(newItem);
+  };
+
+  const queryClient = useQueryClient();
+
+  const reportMutation = useMutation<
+    { success: boolean; item?: LostItem },
+    Error,
+    LostItem
+  >({
+    mutationFn: async (item) => {
+      const res = await apiFetch("/api/report-lost-item", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newItem),
+        body: JSON.stringify(item),
       });
-
+      return res.json();
+    },
+    onSuccess(data, item) {
       // Reset form
       setFormData({
         itemName: "",
@@ -137,20 +151,22 @@ export const ReportLostItemForm = ({
 
       toast({
         title: "Item Reported Successfully",
-        description: `Your case number is ${caseNumber}. A confirmation email has been sent.`,
+        description: `Your case number is ${item.caseNumber}. A confirmation email has been sent.`,
       });
 
-      onItemReported(newItem);
-    } catch (error) {
+      onItemReported(item);
+      queryClient.invalidateQueries({ queryKey: ["reportedItems", userId] });
+      setLoading(false);
+    },
+    onError() {
       toast({
         title: "Report Failed",
         description: "Please try again later.",
         variant: "destructive",
       });
-    } finally {
       setLoading(false);
-    }
-  };
+    },
+  });
 
   return (
     <Card className="max-w-2xl mx-auto">

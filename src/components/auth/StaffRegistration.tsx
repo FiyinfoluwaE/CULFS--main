@@ -12,6 +12,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft } from "lucide-react";
 import apiFetch from "@/lib/api";
+import { useMutation } from "@tanstack/react-query";
 
 interface User {
   id: string;
@@ -100,78 +101,91 @@ export const StaffRegistration = ({
     return `CUSTAFF${year}${randomNum}`;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    try {
-      // Validation
-      if (!formData.email.endsWith("@covenantuniversity.edu.ng")) {
-        throw new Error("Email must end with @covenantuniversity.edu.ng");
-      }
+    if (!formData.email.endsWith("@covenantuniversity.edu.ng")) {
+      toast({
+        title: "Registration Failed",
+        description: "Email must end with @covenantuniversity.edu.ng",
+        variant: "destructive",
+      });
+      setLoading(false);
+      return;
+    }
 
-      if (formData.password !== formData.confirmPassword) {
-        throw new Error("Passwords do not match");
-      }
+    if (formData.password !== formData.confirmPassword) {
+      toast({
+        title: "Registration Failed",
+        description: "Passwords do not match",
+        variant: "destructive",
+      });
+      setLoading(false);
+      return;
+    }
 
-      if (formData.password.length < 6) {
-        throw new Error("Password must be at least 6 characters");
-      }
+    if (formData.password.length < 6) {
+      toast({
+        title: "Registration Failed",
+        description: "Password must be at least 6 characters",
+        variant: "destructive",
+      });
+      setLoading(false);
+      return;
+    }
 
-      // Generate staff ID if not provided
-      const staffId = formData.staffId || generateStaffId();
+    registerMutation.mutate({ ...formData });
+  };
 
-      // Map department to officeId
-      const officeId = departmentToOfficeId[formData.department] || "ADMIN";
+  const registerMutation = useMutation<
+    { success: boolean; user_id: string },
+    Error,
+    typeof formData
+  >({
+    mutationFn: async (payload) => {
+      const staffId = payload.staffId || generateStaffId();
+      const officeId = departmentToOfficeId[payload.department] || "ADMIN";
 
-      const response = await apiFetch("/api/register", {
+      const res = await apiFetch("/api/register", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: formData.name,
+          name: payload.name,
           role: "staff",
-          email: formData.email,
-          password: formData.password,
-          staffId, // Use generated or provided staff ID
-          officeId, // mapped from department
+          email: payload.email,
+          password: payload.password,
+          staffId,
+          officeId,
         }),
       });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || "Registration failed");
-      }
-
+      return res.json();
+    },
+    onSuccess(data) {
+      const staffId = formData.staffId || generateStaffId();
       const newUser: User = {
-        id: data.user_id, // Use the UUID from backend
+        id: data.user_id,
         name: formData.name,
         email: formData.email,
         role: "staff",
-        staffId, // Include the staff ID
+        staffId,
       };
-
       toast({
         title: "Registration Successful",
         description: "Your staff account has been created successfully!",
       });
-
       onRegister(newUser);
-    } catch (error) {
+      setLoading(false);
+    },
+    onError(err) {
       toast({
         title: "Registration Failed",
-        description:
-          error instanceof Error
-            ? error.message
-            : "Please check your information",
+        description: err.message || "Please check your information",
         variant: "destructive",
       });
-    } finally {
       setLoading(false);
-    }
-  };
+    },
+  });
 
   return (
     <div>
