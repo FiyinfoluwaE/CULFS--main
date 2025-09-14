@@ -931,6 +931,54 @@ def delete_admin():
     """
     data = request.get_json() or {}
 
+
+@app.route('/api/check-admin-dependents', methods=['POST'])
+def check_admin_dependents():
+    """Return dependent counts for an admin user without deleting anything.
+
+    Requires ADMIN_SETUP_KEY in environment and matching `setupKey` in request body.
+    Body: { "userId": "..." } OR { "email": "...", "setupKey": "..." }
+    """
+    data = request.get_json() or {}
+
+    # Require setup key
+    setup_key_env = os.environ.get('ADMIN_SETUP_KEY')
+    if not setup_key_env:
+        return jsonify({'success': False, 'message': 'ADMIN_SETUP_KEY not configured on this server; operation disabled.'}), 403
+    if data.get('setupKey') != setup_key_env:
+        return jsonify({'success': False, 'message': 'Invalid setup key'}), 403
+
+    # Identify target
+    user = None
+    if data.get('userId'):
+        user = User.query.get(data.get('userId'))
+    elif data.get('email'):
+        user = User.query.filter_by(email_address=data.get('email')).first()
+    else:
+        return jsonify({'success': False, 'message': 'userId or email required'}), 400
+
+    if not user:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+
+    if user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Target user is not an admin'}), 400
+
+    # Compute dependent counts
+    user_id = user.user_id
+    student_count = Student.query.filter_by(user_id=user_id).count()
+    staff_count = Staff.query.filter_by(user_id=user_id).count()
+    lost_count = LostItems.query.filter_by(user_id=user_id).count()
+    notif_count = Notifications.query.filter_by(user_id=user_id).count()
+
+    dependent_summary = {
+        'students': student_count,
+        'staff': staff_count,
+        'lost_items': lost_count,
+        'notifications': notif_count
+    }
+
+    return jsonify({'success': True, 'dependents': dependent_summary}), 200
+
     # Identify target
     user = None
     if data.get('userId'):
