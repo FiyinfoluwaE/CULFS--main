@@ -103,7 +103,7 @@ export const StudentDashboard = ({ user, onLogout }: StudentDashboardProps) => {
   };
 
   const handleItemReported = (newItem: LostItem) => {
-    setReportedItems([newItem, ...reportedItems]);
+    setReportedItems((prev) => [newItem, ...prev]);
     setActiveTab("dashboard");
   };
 
@@ -133,14 +133,16 @@ export const StudentDashboard = ({ user, onLogout }: StudentDashboardProps) => {
       const res = await apiFetch(`/api/lost-items/${caseNumber}`, {
         method: "DELETE",
       });
-      return res.json();
+      const json = await res.json();
+      if (!res.ok || (json && json.success === false)) {
+        throw new Error(json?.message || "Delete failed");
+      }
+      return json;
     },
-    onSuccess() {
-      toast({
-        title: "Deleted",
-        description: "Report deleted",
-        variant: "default",
-      });
+    onSuccess(_, caseNumber) {
+      toast({ title: "Deleted", description: "Report deleted", variant: "default" });
+      // Optimistically remove from local list so UI updates immediately
+      setReportedItems((prev) => prev.filter((i) => i.caseNumber !== caseNumber));
       queryClient.invalidateQueries({ queryKey: ["reportedItems", user.id] });
     },
     onError() {

@@ -154,10 +154,16 @@ export const ReportLostItemForm = ({
 
       toast({
         title: "Item Reported Successfully",
-        description: `Your case number is ${item.caseNumber}. A confirmation email has been sent.`,
+        description: `Your case number is ${data.case_number || item.caseNumber}. A confirmation email has been sent.`,
       });
 
-  onItemReported(item);
+      // Use server's canonical case number when available so future actions (delete) target the correct record
+      const serverCase = (data && (data as any).case_number) || item.caseNumber;
+      const serverItem: LostItem = {
+        ...item,
+        caseNumber: serverCase,
+      };
+      onItemReported(serverItem);
   queryClient.invalidateQueries({ queryKey: ["reportedItems", userId] });
     },
     onError() {
