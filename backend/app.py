@@ -13,14 +13,27 @@ import pymysql
 from sqlalchemy import or_, and_
 from urllib.parse import unquote
 
+# init Flask
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://root:REIGNS10sf@localhost/culfs_database'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = 'your-secret-key-here'
-app.config['SQLALCHEMY_ECHO'] = True
 
+# Load DB URI
+if os.environ.get("RAILWAY_ENVIRONMENT"):
+    # Running on Railway → use env vars
+    app.config["SQLALCHEMY_DATABASE_URI"] = (
+        f"mysql+pymysql://{os.environ['MYSQLUSER']}:{os.environ['MYSQLPASSWORD']}"
+        f"@{os.environ['MYSQLHOST']}:{os.environ['MYSQLPORT']}/{os.environ['MYSQLDATABASE']}"
+    )
+else:
+    # Local dev → fallback
+    app.config["SQLALCHEMY_DATABASE_URI"] = "mysql+pymysql://root:REIGNS10sf@localhost/culfs_database"
+
+# Common config
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "your-secret-key-here")
+app.config["SQLALCHEMY_ECHO"] = True
+
+# Init extensions
 pymysql.install_as_MySQLdb()
-
 db = SQLAlchemy(app)
 CORS(app)
 
@@ -858,6 +871,11 @@ def get_lost_item_names():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 400
 
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+if __name__ == "__main__":
+    from waitress import serve
+    import os
+
+    port = int(os.environ.get("PORT", 5000))
+    serve(app, host="0.0.0.0", port=port)
+
 
